@@ -51,14 +51,14 @@ function _convert(::Type{N}, x::Normed{UInt8,8}) where {N <: Normed{UInt16,16}} 
     reinterpret(N0f16, convert(UInt16, 0x0101*reinterpret(x)))
 end
 
-function _convert(::Type{N}, x::Real) where {T, f, N <: Normed{T,f}}
+function _try_convert(::Type{N}, x::Real) where {T, f, N <: Normed{T,f}}
     if T == UInt128 # for UInt128, we can't widen
         # the upper limit is not exact
-        (0 <= x) & (x <= (typemax(T)/rawone(N))) || throw_converterror(N, x)
+        (0 <= x) & (x <= (typemax(T)/rawone(N))) || return nothing
         y = round(rawone(N)*x)
     else
         y = round(widen1(rawone(N))*x)
-        (0 <= y) & (y <= typemax(T)) || throw_converterror(N, x)
+        (0 <= y) & (y <= typemax(T)) || return nothing
     end
     reinterpret(N, _unsafe_trunc(T, y))
 end
@@ -69,11 +69,11 @@ function _convert(::Type{N}, x::Float16) where {T, f, N <: Normed{T,f}}
     end
     return _convert(N, Float32(x))
 end
-function _convert(::Type{N}, x::Tf) where {T, f, N <: Normed{T,f}, Tf <: Union{Float32, Float64}}
+function _try_convert(::Type{N}, x::Tf) where {T, f, N <: Normed{T,f}, Tf <: Union{Float32, Float64}}
     if T === UInt128 && f == 53
-        0 <= x <= Tf(3.777893186295717e22) || throw_converterror(N, x)
+        0 <= x <= Tf(3.777893186295717e22) || return nothing
     else
-        0 <= x <= Tf((typemax(T)-rawone(N))/rawone(N)+1) || throw_converterror(N, x)
+        0 <= x <= Tf((typemax(T)-rawone(N))/rawone(N)+1) || return nothing
     end
 
     f == 1 && x == Tf(typemax(N)) && return typemax(N)
@@ -100,11 +100,11 @@ function _convert(::Type{N}, x::Tf) where {T, f, N <: Normed{T,f}, Tf <: Union{F
     return reinterpret(N, unsafe_trunc(T, yi >> (ex & bits)))
 end
 
-function _convert(::Type{N}, x::Rational) where {T, f, N <: Normed{T,f}}
+function _try_convert(::Type{N}, x::Rational) where {T, f, N <: Normed{T,f}}
     if 0 <= x <= Rational(typemax(N))
         reinterpret(N, round(T, convert(floattype(T), x) * rawone(N)))
     else
-        throw_converterror(N, x)
+        nothing
     end
 end
 

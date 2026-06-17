@@ -12,7 +12,7 @@ import Base: ==, <, <=, -, +, *, /, ~, isapprox,
 import Statistics   # for _mean_promote
 import Random: Random, AbstractRNG, SamplerType, rand!
 
-using Base.Checked: checked_add, checked_sub, checked_div
+using Base.Checked: checked_add, checked_sub, checked_mul, checked_div
 
 using Base: @pure
 
@@ -82,6 +82,71 @@ big(x::FixedPoint) = convert(BigFloat, x)
 rationalize(x::FixedPoint; tol::Real=eps(x)) = rationalize(Int, x, tol=tol)
 function rationalize(::Type{Ti}, x::FixedPoint; tol::Real=eps(x)) where Ti <: Integer
     tol <= eps(x) ? Rational{Ti}(x) : rationalize(Ti, float(x), tol)
+end
+
+# parsing
+
+# true if `cu[lo:hi]` is a nonempty run of ASCII decimal digits
+_alldigits(cu, lo::Int, hi::Int) = lo <= hi && all(UInt8('0') <= cu[i] <= UInt8('9') for i in lo:hi)
+
+# true if `cu[lo:hi]` is an optional sign followed by ASCII decimal digits
+_isdecint(cu, lo::Int, hi::Int) = lo <= hi && _alldigits(cu, lo + (cu[lo] ∈ UInt8.(('-', '+'))), hi)
+
+function Base.tryparse(::Type{X}, s::AbstractString) where {T, f, X <: FixedPoint{T,f}}
+    bitwidth(T) > 64 && return _tryparse_bf(X, s)
+    IT = bitwidth(T) <= 32 ? Int64 : Int128
+    cu = codeunits(s)
+    ncu = lastindex(cu)
+    dot = findfirst(==(UInt8('.')), cu)
+    if isnothing(dot)
+        # plain integer; anything else (exponent, whitespace, …) goes to BigFloat
+        _isdecint(cu, 1, ncu) || return _tryparse_bf(X, s)
+        n = tryparse(IT, s)
+        isnothing(n) && return _tryparse_bf(X, s)
+        n < 0 && T <: Unsigned && return nothing
+        return _try_convert(X, n)
+    end
+    iplo, iphi = 1, dot - 1          # integer part, may carry a sign
+    fplo, fphi = dot + 1, ncu        # fractional part, digits only
+    ipempty = iphi < iplo
+    fpempty = fphi < fplo
+    ipempty && fpempty && return nothing
+    # the fast decimal path requires plain digits on both sides of the dot;
+    # whitespace, exponents and other syntax fall back to BigFloat parsing
+    ipempty || _isdecint(cu, iplo, iphi) || return _tryparse_bf(X, s)
+    fpempty || _alldigits(cu, fplo, fphi) || return _tryparse_bf(X, s)
+    neg = !ipempty && cu[iplo] == UInt8('-')
+    neg && T <: Unsigned && return nothing
+    # trailing fractional zeros leave the value unchanged but enlarge the
+    # denominator, so drop them to keep more inputs on the integer fast path
+    while fphi >= fplo && cu[fphi] == UInt8('0')
+        fphi -= 1
+    end
+    nd = fphi < fplo ? 0 : fphi - fplo + 1
+    ip = ipempty ? zero(IT) : tryparse(IT, SubString(s, 1, dot - 1))
+    fp = nd == 0 ? zero(IT) : tryparse(IT, SubString(s, dot + 1, fphi))
+    (isnothing(ip) || isnothing(fp)) && return _tryparse_bf(X, s)
+    try
+        d = one(IT)
+        for _ in 1:nd
+            d = checked_mul(d, IT(10))
+        end
+        num = checked_add(checked_mul(abs(ip), d), fp)
+        return _try_convert(X, (neg ? -num : num) // d)
+    catch e
+        e isa OverflowError && return _tryparse_bf(X, s)
+        rethrow()
+    end
+end
+
+function _tryparse_bf(::Type{X}, s::AbstractString) where {X <: FixedPoint}
+    r = tryparse(BigFloat, s)
+    isnothing(r) ? nothing : _try_convert(X, r)
+end
+
+function _convert(::Type{X}, x) where {X <: FixedPoint}
+    y = _try_convert(X, x)
+    isnothing(y) ? throw_converterror(X, x) : y
 end
 
 """

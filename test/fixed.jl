@@ -79,7 +79,11 @@ end
 
 @testset "domain of f" begin
     # TODO: change the upper limit
-    @test_logs (:warn, r"`f=8` with raw type `T=Int8` will be removed") zero(Fixed{Int8,8})
+    if Base.JLOptions().depwarn == 1
+        @test_logs (:warn, r"`f=8` with raw type `T=Int8` will be removed") zero(Fixed{Int8,8})
+    else
+        @test zero(Fixed{Int8,8}) isa Fixed{Int8,8}
+    end
     @test_throws DomainError zero(Fixed{Int8,-1})
     # @test_throws DomainError zero(Fixed{Int8,8})
     @test_throws DomainError zero(Fixed{Int8,9})
@@ -147,6 +151,36 @@ end
     @test_throws ArgumentError convert(Q7f8, Base.TwicePrecision(0x80, 0x01))
     tp = Base.TwicePrecision(0xFFFFFFFFp-32, 0xFFFFFFFEp-64)
     @test convert(Q0f63, tp) === reinterpret(Q0f63, typemax(Int64))
+end
+
+@testset "parse" begin
+    @test parse(Q3f4, "7.92") === 7.9375Q3f4
+    @test parse(Q0f7, "-1.0") === -1.0Q0f7
+    @test tryparse(Q3f4, "7.92") === 7.9375Q3f4
+    @test tryparse(Q3f4, "-3.5") === -3.5Q3f4
+    @test tryparse(Q3f4, "999.0") === nothing
+    @test tryparse(Q3f4, "abc") === nothing
+    @test_throws ArgumentError parse(Q3f4, "abc")
+    @test_throws ArgumentError parse(Q3f4, "999.0")
+
+    # leading/trailing whitespace and exponent notation
+    @test tryparse(Q3f4, " 1.5 ") === 1.5Q3f4
+    @test tryparse(Q3f4, "1e0") === 1.0Q3f4
+    @test tryparse(Q3f4, "1.0e0") === 1.0Q3f4
+    # signs, bare dot positions and malformed input
+    @test tryparse(Q3f4, "+1.5") === 1.5Q3f4
+    @test tryparse(Q3f4, ".5") === 0.5Q3f4
+    @test tryparse(Q3f4, "1.") === 1.0Q3f4
+    @test tryparse(Q3f4, "-.5") === -0.5Q3f4
+    @test tryparse(Q3f4, "") === nothing
+    @test tryparse(Q3f4, ".") === nothing
+    @test tryparse(Q3f4, "1.2.3") === nothing
+    # wide types take the BigFloat path
+    @test tryparse(Fixed{Int128,64}, "0.5") === reinterpret(Fixed{Int128,64}, Int128(1) << 63)
+    # trailing fractional zeros stay on the integer fast path
+    @test tryparse(Q3f4, "0.50000000000000000000") === 0.5Q3f4
+    # a long fractional part with a significant final digit overflows to the BigFloat fallback
+    @test tryparse(Q3f4, "0.50000000000000000001") === 0.5Q3f4
 end
 
 @testset "test_fixed" begin

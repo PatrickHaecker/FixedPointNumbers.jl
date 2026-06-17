@@ -52,43 +52,43 @@ function _convert(::Type{F}, x::Fixed{T2,f2}) where {T, T2, f, f2, F <: Fixed{T,
     reinterpret(F, _unsafe_trunc(T, y))
 end
 
-function _convert(::Type{F}, x::Integer) where {T, f, F <: Fixed{T,f}}
+function _try_convert(::Type{F}, x::Integer) where {T, f, F <: Fixed{T,f}}
     if ((typemin(T) >> f) <= x) & (x <= (typemax(T) >> f))
         reinterpret(F, _unsafe_trunc(T, x) << f)
     else
-        throw_converterror(F, x)
+        nothing
     end
 end
 
-function _convert(::Type{F}, x::AbstractFloat) where {T, f, F <: Fixed{T,f}}
+function _try_convert(::Type{F}, x::AbstractFloat) where {T, f, F <: Fixed{T,f}}
     bigx = big(x)
     bmin = BigFloat(typemin(F)) - @exp2(-f-1)
     bmax = BigFloat(typemax(F)) + @exp2(-f-1)
     if bmin <= bigx < bmax
         reinterpret(F, round(T, bigx * @exp2(f)))
     else
-        throw_converterror(F, x)
+        nothing
     end
 end
 
 _convert(::Type{F}, x::Float16) where {T, f, F <: Fixed{T,f}} = F(Float32(x))
 
-function _convert(::Type{F}, x::Union{Float32, Float64}) where {T, f, F <: Fixed{T,f}}
+function _try_convert(::Type{F}, x::Union{Float32, Float64}) where {T, f, F <: Fixed{T,f}}
     Tf = typeof(x)
     if Tf(typemin(F) - @exp2(-f-1)) <= x < Tf(typemax(F) + @exp2(-f-1))
         reinterpret(F, round(T, x * @exp2(f)))
     else
-        throw_converterror(F, x)
+        nothing
     end
 end
 
-function _convert(::Type{F}, x::Rational) where {T, f, F <: Fixed{T,f}}
+function _try_convert(::Type{F}, x::Rational) where {T, f, F <: Fixed{T,f}}
     xmin = widemul(denominator(x), widen1(T)(typemin(T)) << 0x1 - 0x1)
     xmax = widemul(denominator(x), oneunit(widen1(T)) << bitwidth(T) - 0x1)
     if xmin <= (widen1(numerator(x)) << UInt8(f + 1)) < xmax
         reinterpret(F, round(T, convert(floattype(T), x) * @exp2(f)))
     else
-        throw_converterror(F, x)
+        nothing
     end
 end
 

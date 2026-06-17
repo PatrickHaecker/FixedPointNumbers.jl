@@ -154,6 +154,32 @@ end
     @test_throws InexactError convert(Int8, 256N8f8)
 end
 
+@testset "parse" begin
+    @test parse(N0f8, "0.5") === N0f8(0.5)
+    @test parse(N0f8, "1.0") === 1N0f8
+    @test parse(N0f8, "0.0") === 0N0f8
+    @test tryparse(N0f8, "0.5") === N0f8(0.5)
+    @test tryparse(N0f8, "-0.1") === nothing
+    @test tryparse(N0f8, "1.5") === nothing
+    @test tryparse(N0f8, "abc") === nothing
+    @test_throws ArgumentError parse(N0f8, "-0.1")
+    @test_throws ArgumentError parse(N0f8, "abc")
+
+    # leading/trailing whitespace and exponent notation
+    @test tryparse(N0f8, " 0.5 ") === N0f8(0.5)
+    @test tryparse(N0f8, "1e0") === 1N0f8
+    @test tryparse(N0f8, "0.5e0") === N0f8(0.5)
+    # signs, bare dot positions and malformed input
+    @test tryparse(N0f8, "+0.5") === N0f8(0.5)
+    @test tryparse(N0f8, ".5") === N0f8(0.5)
+    @test tryparse(N0f8, "-1") === nothing
+    @test tryparse(N0f8, "") === nothing
+    @test tryparse(N0f8, ".") === nothing
+    @test tryparse(N0f8, "0.5.0") === nothing
+    # wide types take the BigFloat path
+    @test tryparse(Normed{UInt128,128}, "0.5") === reinterpret(Normed{UInt128,128}, typemax(UInt128) ÷ 2 + 1)
+end
+
 @testset "rational conversions" begin
     @test convert(Rational, 0.5N0f8) === Rational{UInt8}(0x80//0xff)
     @test convert(Rational, 0.5N4f12) === Rational{UInt16}(0x800//0xfff)
